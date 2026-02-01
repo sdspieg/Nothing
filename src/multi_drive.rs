@@ -197,8 +197,6 @@ pub fn index_cloud_storage_folder(
         let name = entry.file_name().to_string_lossy().to_string();
 
         // Get metadata
-        use chrono::{DateTime, Utc};
-
         let metadata = fs::metadata(entry.path()).ok();
         let size = metadata.as_ref().map(|m| m.len()).unwrap_or(0);
         let modified = metadata.as_ref().and_then(|m| m.modified().ok());

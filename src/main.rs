@@ -1,3 +1,4 @@
+mod cloud_monitor;
 mod error;
 mod file_entry;
 mod index;
@@ -5,8 +6,10 @@ mod interactive;
 mod mft_reader;
 mod mft_reader_ntfs;
 mod multi_drive;
+mod persistence;
 mod search;
 mod sector_aligned_reader;
+mod usn_monitor;
 mod volume_test;
 
 use anyhow::Result;
@@ -14,6 +17,7 @@ use clap::Parser;
 use index::FileIndex;
 use mft_reader::MftReader;
 use mft_reader_ntfs::MftReaderNtfs;
+use std::sync::{Arc, Mutex};
 
 #[derive(Parser, Debug)]
 #[command(name = "nothing")]
@@ -55,23 +59,55 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    // Create file index
-    let mut index = FileIndex::new();
-
-    // Scan drives based on flags
-    if args.all_drives {
-        println!("Scanning all fixed drives...\n");
-        multi_drive::scan_all_fixed_drives(&mut index, args.full_metadata)?;
+    // Determine which drives to monitor
+    let drives: Vec<char> = if args.all_drives {
+        multi_drive::get_all_drives()
     } else {
-        // Single drive mode
-        if args.full_metadata {
-            println!("Using full metadata mode (includes sizes and timestamps)");
-            let reader = MftReaderNtfs::new(args.drive)?;
-            reader.scan_into_index(&mut index)?;
+        vec![args.drive]
+    };
+
+    // Try to load cached index
+    let mut index = if !drives.is_empty() {
+        let cache_path = persistence::get_index_path(drives[0])?;
+        match persistence::load_index(&cache_path) {
+            Ok(idx) => {
+                println!("✅ Loaded cached index from disk");
+                println!("   {} files, {} directories", idx.file_count(), idx.directory_count());
+                idx
+            }
+            Err(_) => {
+                println!("No cached index found, performing full scan...");
+                FileIndex::new()
+            }
+        }
+    } else {
+        FileIndex::new()
+    };
+
+    // If index is empty, scan drives
+    if index.is_empty() {
+        if args.all_drives {
+            println!("Scanning all fixed drives...\n");
+            multi_drive::scan_all_fixed_drives(&mut index, args.full_metadata)?;
         } else {
-            println!("Using fast mode (names and paths only)");
-            let reader = MftReader::new(args.drive)?;
-            reader.scan_into_index(&mut index)?;
+            // Single drive mode
+            if args.full_metadata {
+                println!("Using full metadata mode (includes sizes and timestamps)");
+                let reader = MftReaderNtfs::new(args.drive)?;
+                reader.scan_into_index(&mut index)?;
+            } else {
+                println!("Using fast mode (names and paths only)");
+                let reader = MftReader::new(args.drive)?;
+                reader.scan_into_index(&mut index)?;
+            }
+        }
+
+        // Save index for next time
+        if !drives.is_empty() {
+            println!("\nSaving index to disk...");
+            let cache_path = persistence::get_index_path(drives[0])?;
+            persistence::save_index(&index, &cache_path)?;
+            println!("✅ Index saved");
         }
     }
 
@@ -92,10 +128,47 @@ fn main() -> Result<()> {
         }
     }
 
-    // Enter interactive mode if requested
+    // Enter interactive mode with monitoring if requested
     if args.interactive {
-        println!("\nEntering interactive search mode...\n");
-        interactive::run_interactive_search(&index)?;
+        println!("\nEntering interactive search mode with real-time monitoring...\n");
+
+        // Wrap index in Arc<Mutex<>> for thread-safe access
+        let index_arc = Arc::new(Mutex::new(index));
+        let index_clone = Arc::clone(&index_arc);
+
+        // Start USN monitoring for NTFS drives
+        let monitor = usn_monitor::UsnMonitor::new(drives.clone(), Arc::clone(&index_arc))?;
+
+        // Start cloud monitoring if requested
+        let _cloud_monitor = if args.include_cloud {
+            let cloud_folders: Vec<std::path::PathBuf> = multi_drive::find_cloud_storage_folders()
+                .into_iter()
+                .map(|(_, path)| path)
+                .collect();
+
+            if !cloud_folders.is_empty() {
+                Some(cloud_monitor::CloudMonitor::new(cloud_folders, Arc::clone(&index_arc))?)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // Run interactive search
+        interactive::run_interactive_search_with_arc(&index_clone)?;
+
+        // Stop monitoring
+        monitor.stop();
+
+        // Save updated index
+        if !drives.is_empty() {
+            println!("\nSaving updated index...");
+            let final_index = index_clone.lock().unwrap();
+            let cache_path = persistence::get_index_path(drives[0])?;
+            persistence::save_index(&*final_index, &cache_path)?;
+            println!("✅ Index saved");
+        }
     }
 
     Ok(())

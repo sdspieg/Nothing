@@ -6,6 +6,8 @@ A lightweight, fast Windows file search tool written in Rust that reads the NTFS
 
 - **Fast MFT Scanning**: Enumerates all files on an NTFS volume in seconds (155k files/sec)
 - **Full Metadata Support**: ✨ File sizes and timestamps (created, modified, accessed)
+- **Real-Time Monitoring**: 🔥 **NEW!** Index auto-updates as files change (enabled in interactive mode)
+- **Index Persistence**: 💾 **NEW!** Save/load index to disk for instant startup
 - **Multi-Drive Scanning**: 🎉 Scan all fixed drives automatically with `--all-drives`
 - **Cloud Storage Integration**: 🎉 Index Google Drive, Dropbox, OneDrive with `--include-cloud`
 - **In-Memory Indexing**: Stores file paths and metadata for instant access
@@ -13,12 +15,6 @@ A lightweight, fast Windows file search tool written in Rust that reads the NTFS
 - **Interactive CLI**: Real-time search results as you type
 - **Memory Optimized**: Efficient string storage (2-4 GB for 10M+ files)
 - **Color-Coded Results**: File/directory distinction with relevance scores
-
-## Important Limitation
-
-⚠️ **The index does NOT automatically update when files change.** You must rescan to see new/deleted/modified files.
-
-**Why?** Real-time updates (USN Journal monitoring) is Phase 3, fully documented but not yet implemented. See `USN_JOURNAL_ROADMAP.md` for the complete implementation plan. When implemented, updates will be near-instant (5-second latency) with minimal overhead.
 
 ## Requirements
 
@@ -134,10 +130,11 @@ Once in interactive mode:
 
 ## Example Output
 
-### Scanning
+### First Run (Full Scan)
 
 ```
 Nothing - Fast File Search Tool
+No cached index found, performing full scan...
 Scanning drive C:...
 
 Progress: 100,000 files...
@@ -151,13 +148,28 @@ Directories: 590,467
 Time taken: 73.74 seconds (155,088 files/sec)
 Index memory: 2.12 GB
 
-Entering interactive search mode...
+Saving index to disk...
+✅ Index saved
+
+Entering interactive search mode with real-time monitoring...
+📡 Monitoring drive C:\
+```
+
+### Subsequent Runs (Cached)
+
+```
+✅ Loaded cached index from disk
+   10,726,987 files, 590,467 directories
+
+Entering interactive search mode with real-time monitoring...
+📡 Monitoring drive C:\
 ```
 
 ### Interactive Search
 
 ```
-Nothing - Interactive Search
+Nothing - Interactive Search (Real-Time Monitoring)
+📡 Index auto-updates as files change
 Press Ctrl+C or Ctrl+D to exit
 Type to search (fuzzy matching enabled)...
 
@@ -174,37 +186,41 @@ Found 1,234 matches (showing top 50)
 ...
 ```
 
-## Current Limitations
+## What's Working
 
-**Note**: The current version uses `usn-journal-rs` which provides basic MFT enumeration but does **not** include:
-- ❌ File sizes
-- ❌ Timestamps (created, modified, accessed)
-
-**What works:**
 - ✅ File and directory names
 - ✅ Full paths
 - ✅ Fast enumeration (155k+ files/sec)
 - ✅ Interactive fuzzy search
 - ✅ Real-time results
-
-**To get sizes and timestamps**: Switch to the `ntfs` crate for full MFT parsing (3-5x slower but provides complete metadata).
+- ✅ **Real-time monitoring** (auto-updates on file changes)
+- ✅ **Index persistence** (save/load from disk)
+- ✅ File sizes and timestamps (with `--full-metadata`)
+- ✅ Multi-drive and cloud storage support
 
 ## Roadmap
 
-### Phase 2: Fuzzy Search (Planned)
-- Interactive search interface
-- Fuzzy matching for file names
-- Filter by extension, path, etc.
+### Phase 1: Fast MFT Scanning ✅ COMPLETE
+- MFT enumeration with usn-journal-rs
+- In-memory indexing
+- Full path reconstruction
 
-### Phase 3: USN Journal Monitoring (Planned)
-- Real-time file change detection
-- Incremental index updates
-- Keep index in sync with filesystem
-
-### Phase 4: Enhanced Metadata (Future)
-- Switch to `ntfs` crate for full MFT access
+### Phase 2: Full Metadata & Search ✅ COMPLETE
 - File sizes and timestamps
-- Extended attributes
+- Interactive fuzzy search
+- Multi-drive and cloud storage support
+
+### Phase 3: Real-Time Monitoring ✅ COMPLETE
+- ✅ Real-time file change detection using `notify` crate
+- ✅ Automatic index updates
+- ✅ Index persistence (save/load to disk)
+- ✅ Cloud storage monitoring
+
+### Phase 4: Advanced Features (Future)
+- Search filters (size, date range, extension)
+- Export results to CSV/JSON
+- Search history
+- Performance metrics dashboard
 
 ### Phase 5: GUI (Future)
 - Native Windows GUI

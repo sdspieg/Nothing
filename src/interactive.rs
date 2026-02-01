@@ -9,6 +9,7 @@ use crossterm::{
     terminal::{self, ClearType},
 };
 use std::io::{stdout, Write};
+use std::sync::{Arc, Mutex};
 
 const RESULT_LIMIT: usize = 50;
 
@@ -28,6 +29,59 @@ fn format_file_size(bytes: u64) -> String {
     } else {
         format!("{:.1} {}", size, UNITS[unit_idx])
     }
+}
+
+/// Run interactive search mode with Arc<Mutex<>> index (for monitoring)
+pub fn run_interactive_search_with_arc(index: &Arc<Mutex<FileIndex>>) -> Result<()> {
+    let mut stdout = stdout();
+    let mut search_engine = SearchEngine::new();
+    let mut query = String::new();
+
+    // Enable raw mode for character-by-character input
+    terminal::enable_raw_mode()?;
+
+    // Clear screen and show initial prompt
+    execute!(
+        stdout,
+        terminal::Clear(ClearType::All),
+        cursor::MoveTo(0, 0)
+    )?;
+
+    println!("Nothing - Interactive Search (Real-Time Monitoring)");
+    println!("📡 Index auto-updates as files change");
+    println!("Press Ctrl+C or Ctrl+D to exit");
+    println!("Type to search (fuzzy matching enabled)...\n");
+    print!("> ");
+    stdout.flush()?;
+
+    loop {
+        // Read keyboard events
+        if event::poll(std::time::Duration::from_millis(100))? {
+            if let Event::Key(key_event) = event::read()? {
+                match handle_key_event(key_event, &mut query)? {
+                    KeyAction::Exit => break,
+                    KeyAction::UpdateSearch => {
+                        // Lock index for searching
+                        let index_guard = index.lock().unwrap();
+                        display_search_results(&mut stdout, &mut search_engine, &*index_guard, &query)?;
+                        drop(index_guard); // Release lock
+                    }
+                    KeyAction::None => {}
+                }
+            }
+        }
+    }
+
+    // Restore terminal
+    terminal::disable_raw_mode()?;
+    execute!(
+        stdout,
+        terminal::Clear(ClearType::All),
+        cursor::MoveTo(0, 0)
+    )?;
+    println!("Goodbye!");
+
+    Ok(())
 }
 
 /// Run interactive search mode
