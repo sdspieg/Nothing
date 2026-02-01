@@ -57,9 +57,9 @@ The fast version using `usn-journal-rs` is complete and working:
 - Relevance scores
 - Ctrl+C to exit
 
-## ⚠️ Phase 2: Full Metadata (IN PROGRESS)
+## ✅ Phase 2: Full Metadata (WORKING!)
 
-**Status:** 🔧 **Implementation Complete, Runtime Issue**
+**Status:** ✅ **FULLY FUNCTIONAL**
 
 ### What Was Built
 
@@ -74,12 +74,17 @@ All code for full metadata support has been written:
 7. **✅ Interactive display** - Shows size and modified date in results
 8. **✅ Dual-mode support** - `--full-metadata` flag to choose
 
-### Current Issue
+### ✅ Issue RESOLVED!
 
-**Problem:** Volume access error when initializing NTFS
-- Error: "The parameter is incorrect" (0x80070057)
-- Occurs during boot sector parsing
-- Likely cause: Incorrect volume handle setup or sector alignment
+**Problem:** Volume access error when initializing NTFS (FIXED)
+- Error was: "The parameter is incorrect" (0x80070057)
+- Root cause: ntfs crate's binrw parser requires sector-aligned reads
+- Windows raw volume I/O requires all reads to be aligned to 512-byte sectors
+- **Solution:** Created `SectorAlignedReader` wrapper that:
+  - Buffers reads in 8KB chunks (16 sectors)
+  - Transparently aligns all read operations
+  - Allows ntfs crate to work with raw volume handles
+- **Result:** Full metadata mode now works perfectly!
 
 ### Files Created/Modified
 

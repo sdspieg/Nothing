@@ -4,10 +4,15 @@ A lightweight, fast Windows file search tool written in Rust that reads the NTFS
 
 ## Features
 
-- **Fast MFT scanning**: Enumerates all files on an NTFS volume in seconds
-- **In-memory indexing**: Stores file paths and metadata for instant access
-- **Low overhead**: Minimal resource usage during scanning
-- **Simple CLI**: Easy-to-use command-line interface
+- **Fast MFT Scanning**: Enumerates all files on an NTFS volume in seconds (155k files/sec)
+- **Full Metadata Support**: ✨ File sizes and timestamps (created, modified, accessed)
+- **Multi-Drive Scanning**: 🎉 Scan all fixed drives automatically with `--all-drives`
+- **Cloud Storage Integration**: 🎉 Index Google Drive, Dropbox, OneDrive with `--include-cloud`
+- **In-Memory Indexing**: Stores file paths and metadata for instant access
+- **Fuzzy Search**: Typo-tolerant search powered by nucleo-matcher
+- **Interactive CLI**: Real-time search results as you type
+- **Memory Optimized**: Efficient string storage (2-4 GB for 10M+ files)
+- **Color-Coded Results**: File/directory distinction with relevance scores
 
 ## Requirements
 
@@ -51,6 +56,49 @@ nothing.exe
 
 ```bash
 nothing.exe D -i
+```
+
+### Full metadata mode (includes file sizes and timestamps)
+
+```bash
+nothing.exe --full-metadata -i
+```
+
+Or using the short flag:
+
+```bash
+nothing.exe -f -i
+```
+
+### Scan all fixed drives
+
+```bash
+nothing.exe --all-drives -i
+```
+
+Or:
+
+```bash
+nothing.exe -a -i
+```
+
+### Include cloud storage folders (Google Drive, Dropbox, OneDrive)
+
+```bash
+nothing.exe --include-cloud -i
+```
+
+Or:
+
+```bash
+nothing.exe -c -i
+```
+
+### Combine all features
+
+```bash
+# Full metadata + all drives + cloud storage + interactive search
+nothing.exe -f -a -c -i
 ```
 
 ### Run as Administrator

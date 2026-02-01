@@ -1,18 +1,14 @@
 use crate::file_entry::FileEntry;
 use crate::index::FileIndex;
+use crate::sector_aligned_reader::SectorAlignedReader;
 use anyhow::{Context, Result};
 use chrono::{DateTime, TimeZone, Utc};
 use ntfs::structured_values::{NtfsFileName, NtfsFileNamespace};
 use ntfs::{Ntfs, NtfsFile};
 use std::collections::HashMap;
-use std::io::SeekFrom;
+use std::fs::OpenOptions;
 use std::sync::Arc;
 use std::time::Instant;
-use windows::Win32::Foundation::{CloseHandle, HANDLE, GENERIC_READ};
-use windows::Win32::Storage::FileSystem::{
-    CreateFileW, ReadFile, SetFilePointerEx, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
-    FILE_BEGIN, FILE_CURRENT, FILE_END,
-};
 
 /// MFT reader using ntfs crate for full metadata
 pub struct MftReaderNtfs {
@@ -38,15 +34,20 @@ impl MftReaderNtfs {
 
         let start_time = Instant::now();
 
-        // Open volume handle
+        // Open volume with sector-aligned reader
         let volume_path = format!("\\\\.\\{}:", self.drive_letter);
-        let mut file = open_volume(&volume_path)
+        let file = OpenOptions::new()
+            .read(true)
+            .write(false)
+            .open(&volume_path)
             .with_context(|| {
                 format!(
                     "Failed to open volume {}:\nMake sure you're running as Administrator",
                     self.drive_letter
                 )
             })?;
+
+        let mut file = SectorAlignedReader::new(file);
 
         // Initialize NTFS
         let mut ntfs = Ntfs::new(&mut file)?;
@@ -295,76 +296,6 @@ impl MftReaderNtfs {
         } else {
             format!("{}:\\{}", self.drive_letter, name).into()
         }
-    }
-}
-
-/// Open volume with raw access
-fn open_volume(path: &str) -> Result<VolumeHandle> {
-    let wide_path: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
-
-    let handle = unsafe {
-        CreateFileW(
-            windows::core::PCWSTR(wide_path.as_ptr()),
-            GENERIC_READ.0,
-            FILE_SHARE_READ | FILE_SHARE_WRITE,
-            None,
-            OPEN_EXISTING,
-            Default::default(),
-            None,
-        )?
-    };
-
-    Ok(VolumeHandle { handle })
-}
-
-/// RAII wrapper for Windows volume handle
-struct VolumeHandle {
-    handle: HANDLE,
-}
-
-impl Drop for VolumeHandle {
-    fn drop(&mut self) {
-        unsafe {
-            let _ = CloseHandle(self.handle);
-        }
-    }
-}
-
-impl std::io::Read for VolumeHandle {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let mut bytes_read = 0u32;
-        unsafe {
-            ReadFile(
-                self.handle,
-                Some(buf),
-                Some(&mut bytes_read),
-                None,
-            )
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-        }
-        Ok(bytes_read as usize)
-    }
-}
-
-impl std::io::Seek for VolumeHandle {
-    fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
-        let (distance, method) = match pos {
-            SeekFrom::Start(n) => (n as i64, FILE_BEGIN),
-            SeekFrom::Current(n) => (n, FILE_CURRENT),
-            SeekFrom::End(n) => (n, FILE_END),
-        };
-
-        let mut new_pos = 0i64;
-        unsafe {
-            SetFilePointerEx(
-                self.handle,
-                distance,
-                Some(&mut new_pos),
-                method,
-            )
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-        }
-        Ok(new_pos as u64)
     }
 }
 
