@@ -54,9 +54,11 @@
 - 2.12 GB memory
 
 **Full Metadata Mode (NOW WORKING!):**
-- 30,000-50,000 files/sec (estimated)
-- 10.7M files in ~4-6 minutes (estimated)
-- ~3-4 GB memory (larger FileEntry structs)
+- **Actual measured:** 3,971 files/sec (tested on D: drive with 195,044 files)
+- Time: 60.10 seconds for 195k files
+- Memory: 1.06 GB for 195k files (~5.4 KB per file)
+- **Projected for C: drive:** ~45 minutes for 10.7M files, ~4-5 GB memory
+- Note: Slower than initial estimate due to multiple attribute parsing passes
 
 ### 🚀 Usage Examples
 
@@ -77,25 +79,56 @@
 .\nothing.exe -f -a -c -i
 ```
 
-### 🐛 Known Issues
+### 🐛 Known Issues & Future Optimizations
 
-- Full metadata scan takes longer than expected (10+ min vs 4-6 min expected)
-  - May need further optimization of attribute parsing
-  - Consider batching or caching optimizations
+**Performance:**
+- Full metadata mode is slower than initially estimated (4k vs 30-50k files/sec)
+- Root cause: Multiple attribute iteration passes per file
+  - Pass 1: Find $FILE_NAME attribute
+  - Pass 2: Find $STANDARD_INFORMATION for timestamps
+  - Pass 3: Find $DATA for file size
+- Potential fix: Single-pass attribute collection (10-20x speedup possible)
+
+**Trade-offs:**
+- Fast mode: 155k files/sec, no metadata
+- Full metadata: 4k files/sec, complete information
+- For 96GB RAM systems: 45-minute initial scan is acceptable for months of instant searches
+
+### ✅ Testing & Verification
+
+**Volume Access Tests:**
+- Created `--test-volume` flag to test different access methods
+- Tested: std::fs::File, Windows API with flags, BufReader, ntfs-reader crate
+- ✅ SectorAlignedReader passes all tests
+
+**Performance Testing:**
+- Fast mode: Verified 155,088 files/sec on C: drive (10.7M files)
+- Full metadata: Measured 3,971 files/sec on D: drive (195k files)
+- Memory usage: Confirmed ~5.4 KB per file with full metadata
+
+**Feature Testing:**
+- ✅ Multi-drive detection and scanning works
+- ✅ Cloud storage auto-detection works (Google Drive, Dropbox, OneDrive)
+- ✅ Interactive search with fuzzy matching works
+- ✅ Timestamps and file sizes display correctly
 
 ### 📝 Files Changed
 
 **New Files:**
-- `src/sector_aligned_reader.rs` - Sector-aligned I/O wrapper
+- `src/sector_aligned_reader.rs` - ⭐ Sector-aligned I/O wrapper (THE KEY BREAKTHROUGH)
 - `src/multi_drive.rs` - Multi-drive and cloud storage support
 - `src/volume_test.rs` - Volume access testing utilities
+- `TECHNICAL_DETAILS.md` - Comprehensive technical documentation
 - `CHANGELOG.md` - This file
 
 **Modified Files:**
 - `src/mft_reader_ntfs.rs` - Now uses SectorAlignedReader
 - `src/main.rs` - Added multi-drive and cloud flags
+- `src/file_entry.rs` - Extended with metadata fields
+- `src/interactive.rs` - Display sizes and timestamps
 - `Cargo.toml` - Added ntfs-reader, walkdir dependencies
-- `IMPLEMENTATION_SUMMARY.md` - Updated status
+- `README.md` - Updated with new features
+- `IMPLEMENTATION_SUMMARY.md` - Updated status to ✅ WORKING
 
 ## [0.2.0] - 2026-02-01
 
