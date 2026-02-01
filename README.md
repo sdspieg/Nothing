@@ -14,6 +14,12 @@ A lightweight, fast Windows file search tool written in Rust that reads the NTFS
 - **Memory Optimized**: Efficient string storage (2-4 GB for 10M+ files)
 - **Color-Coded Results**: File/directory distinction with relevance scores
 
+## Important Limitation
+
+⚠️ **The index does NOT automatically update when files change.** You must rescan to see new/deleted/modified files.
+
+**Why?** Real-time updates (USN Journal monitoring) is Phase 3, fully documented but not yet implemented. See `USN_JOURNAL_ROADMAP.md` for the complete implementation plan. When implemented, updates will be near-instant (5-second latency) with minimal overhead.
+
 ## Requirements
 
 - Windows 10/11

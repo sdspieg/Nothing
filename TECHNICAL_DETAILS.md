@@ -585,9 +585,22 @@ codegen-units = 1    # Single codegen unit for better optimization
 
 ## Future Enhancements
 
-### Phase 3: USN Journal Monitoring
+### Phase 3: USN Journal Monitoring (DOCUMENTED - NOT IMPLEMENTED)
+
+⚠️ **Current Status:** The index does NOT automatically update when files change. You must rescan.
+
+📄 **Full Implementation Plan:** See `USN_JOURNAL_ROADMAP.md` for complete details.
 
 **Goal:** Real-time index updates without rescanning
+
+**Performance (Expected):**
+- Update speed: <100ms for typical daily changes (1,000-10,000 files)
+- Extreme loads: ~1 second for 150,000+ changes (Visual Studio install)
+- Latency: 5 seconds (configurable polling interval)
+- Overhead: <1% CPU, <50 MB memory
+- Multi-drive: All drives monitored simultaneously
+
+**How it works:**
 
 ```rust
 let journal = UsnJournal::new(volume)?;
@@ -602,7 +615,13 @@ for record in journal.iter_from(last_usn) {
 
 **Benefit:** Index stays current automatically
 
-### Phase 4: Index Persistence
+**Implementation Status:** Fully documented in `USN_JOURNAL_ROADMAP.md`
+- Estimated time: 4-6 hours for core functionality
+- Dependencies: usn-journal-rs (already installed)
+- Code examples and architecture provided
+- Ready to implement when needed
+
+### Phase 4: Index Persistence (Part of Phase 3)
 
 **Goal:** Save/load index for instant startup
 
@@ -636,6 +655,33 @@ Windows native GUI using:
 - `iced` - Elm-inspired framework
 - `tauri` - Web-based UI with Rust backend
 
+## Real-Time Updates (Phase 3 - Planned)
+
+⚠️ **IMPORTANT:** The current version does NOT automatically update when files change. You must rescan to see changes.
+
+**Why not implemented yet?**
+- Phase 1 & 2 focused on core functionality (scanning and metadata)
+- USN Journal monitoring is the next major feature
+- Complete implementation plan available in `USN_JOURNAL_ROADMAP.md`
+
+**What you need to know:**
+1. **Current behavior:** Index is static after initial scan
+2. **Future behavior:** Index updates automatically within 5 seconds of any file change
+3. **Performance impact:** Minimal (<1% CPU, <50 MB RAM when implemented)
+4. **Implementation time:** 11-14 hours total
+5. **Ready to implement:** All design and code examples documented
+
+**When will it be added?**
+- Can be implemented as Phase 3 based on user demand
+- All technical details fully documented
+- No architectural changes needed (clean addition)
+
+See `USN_JOURNAL_ROADMAP.md` for:
+- Complete implementation guide with code
+- Performance characteristics and benchmarks
+- Multi-drive and cloud storage monitoring details
+- Testing strategy and deployment considerations
+
 ## Conclusion
 
 The sector-aligned reader breakthrough unlocked full NTFS metadata access. The dual-mode design lets users choose between:
@@ -644,8 +690,18 @@ The sector-aligned reader breakthrough unlocked full NTFS metadata access. The d
 
 With 96 GB RAM, you can index 50M+ files with full metadata and search instantly.
 
+**Current limitations:**
+- Index does not auto-update (must rescan)
+- Full metadata scan is slow (4k files/sec vs 155k fast mode)
+
+**Next phase ready:**
+- USN Journal real-time monitoring fully documented
+- Can be implemented in 11-14 hours
+- Will provide 5-second update latency with <1% overhead
+
 ---
 
 **Version:** 0.3.0
 **Date:** 2026-02-01
 **Status:** Production-ready with full metadata support
+**Real-time updates:** Documented but not implemented (Phase 3)
