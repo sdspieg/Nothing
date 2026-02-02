@@ -61,6 +61,9 @@ pub enum Message {
     /// Search query changed
     SearchChanged(String),
 
+    /// Perform the actual search (debounced)
+    PerformSearch,
+
     /// Theme toggled
     ToggleTheme,
 
@@ -79,6 +82,9 @@ pub enum Message {
     /// Open selected result
     OpenResult,
 
+    /// Open containing folder
+    OpenFolder,
+
     /// Export results
     Export,
 
@@ -90,6 +96,15 @@ pub enum Message {
 
     /// Clear filters
     ClearFilters,
+
+    /// Clear search query
+    ClearSearch,
+
+    /// Navigate results (up/down)
+    NavigateResults(i32), // -1 for up, +1 for down
+
+    /// Keyboard event
+    KeyPressed(iced::keyboard::Key, iced::keyboard::Modifiers),
 }
 
 impl NothingGui {
@@ -118,6 +133,16 @@ impl NothingGui {
         match message {
             Message::SearchChanged(query) => {
                 self.query = query;
+                // Debounce: only perform search after 150ms delay
+                return Task::perform(
+                    async {
+                        tokio::time::sleep(tokio::time::Duration::from_millis(150)).await;
+                    },
+                    |_| Message::PerformSearch,
+                );
+            }
+
+            Message::PerformSearch => {
                 self.perform_search();
             }
 
@@ -155,6 +180,17 @@ impl NothingGui {
                 }
             }
 
+            Message::OpenFolder => {
+                if let Some(index) = self.selected_index {
+                    if let Some(result) = self.results.get(index) {
+                        let path = std::path::Path::new(&result.entry.path);
+                        if let Some(parent) = path.parent() {
+                            let _ = open::that(parent);
+                        }
+                    }
+                }
+            }
+
             Message::Export => {
                 // TODO: Show export dialog
             }
@@ -171,6 +207,73 @@ impl NothingGui {
             Message::ClearFilters => {
                 self.filters = SearchFilters::default();
                 self.perform_search();
+            }
+
+            Message::ClearSearch => {
+                self.query.clear();
+                self.results.clear();
+                self.selected_index = None;
+            }
+
+            Message::NavigateResults(delta) => {
+                if !self.results.is_empty() {
+                    if let Some(current) = self.selected_index {
+                        let new_index = (current as i32 + delta)
+                            .max(0)
+                            .min(self.results.len() as i32 - 1) as usize;
+                        self.selected_index = Some(new_index);
+                    } else if delta > 0 {
+                        self.selected_index = Some(0);
+                    } else {
+                        self.selected_index = Some(self.results.len() - 1);
+                    }
+                }
+            }
+
+            Message::KeyPressed(key, modifiers) => {
+                use iced::keyboard::{Key, key::Named};
+
+                match key.as_ref() {
+                    Key::Named(Named::Escape) => {
+                        self.query.clear();
+                        self.results.clear();
+                        self.selected_index = None;
+                    }
+                    Key::Named(Named::Enter) => {
+                        if let Some(index) = self.selected_index {
+                            if let Some(result) = self.results.get(index) {
+                                let _ = open::that(&result.entry.path);
+                            }
+                        }
+                    }
+                    Key::Named(Named::ArrowDown) => {
+                        if !self.results.is_empty() {
+                            if let Some(current) = self.selected_index {
+                                self.selected_index = Some((current + 1).min(self.results.len() - 1));
+                            } else {
+                                self.selected_index = Some(0);
+                            }
+                        }
+                    }
+                    Key::Named(Named::ArrowUp) => {
+                        if !self.results.is_empty() {
+                            if let Some(current) = self.selected_index {
+                                self.selected_index = Some(current.saturating_sub(1));
+                            }
+                        }
+                    }
+                    Key::Character(c) if c == "o" && modifiers.control() => {
+                        if let Some(index) = self.selected_index {
+                            if let Some(result) = self.results.get(index) {
+                                let path = std::path::Path::new(&result.entry.path);
+                                if let Some(parent) = path.parent() {
+                                    let _ = open::that(parent);
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
             }
         }
 
@@ -310,7 +413,17 @@ impl NothingGui {
             .size(18)
             .width(Length::Fill);
 
-        container(search_input)
+        let hints = text("↑/↓ Navigate • Enter Open • Esc Clear • Ctrl+O Open Folder")
+            .size(11)
+            .style(|theme: &Theme| text::Style {
+                color: Some(theme.extended_palette().background.strong.text),
+            });
+
+        let search_col = column![search_input, hints]
+            .spacing(5)
+            .width(Length::Fill);
+
+        container(search_col)
             .padding(20)
             .width(Length::Fill)
             .into()
@@ -532,6 +645,20 @@ impl NothingGui {
             })
             .into()
     }
+
+    /// Subscribe to keyboard events
+    fn subscription(&self) -> iced::Subscription<Message> {
+        use iced::keyboard;
+        use iced::event;
+
+        event::listen_with(|event, _status, _window| {
+            if let event::Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) = event {
+                Some(Message::KeyPressed(key, modifiers))
+            } else {
+                None
+            }
+        })
+    }
 }
 
 /// Format file size
@@ -559,6 +686,7 @@ pub fn run(index: Arc<Mutex<FileIndex>>) -> iced::Result {
         NothingGui::update,
         NothingGui::view,
     )
+    .subscription(NothingGui::subscription)
     .theme(NothingGui::theme)
     .window(iced::window::Settings {
         size: iced::Size::new(1200.0, 800.0),
