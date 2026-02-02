@@ -117,12 +117,32 @@ nothing.exe -c -i
 nothing.exe -f -a -c -i
 ```
 
+### GUI Mode (NEW!) 🎨
+
+```bash
+# Launch beautiful GUI application
+nothing.exe --gui
+# or
+nothing.exe -g
+```
+
+**Features:**
+- Dark/Light theme toggle (🌙/☀️)
+- Real-time search
+- Sortable results table
+- Click column headers to sort
+- Professional modern interface
+
 ### Run as Administrator
 
 Right-click PowerShell and select "Run as Administrator", then:
 
 ```bash
 cd C:\Apps\Nothing
+# GUI mode
+.\target\release\nothing.exe -g
+
+# Or CLI mode
 .\target\release\nothing.exe -i
 ```
 
@@ -281,11 +301,19 @@ Found 1,234 matches (showing top 50)
 - ✅ Performance metrics dashboard
 - ✅ Interactive help system
 
-### Phase 5: GUI (Future)
-- Native Windows GUI
-- Better visualization
-- Search result management
-- Drag-and-drop file operations
+### Phase 5: Modern GUI ✅ COMPLETE
+- ✅ Beautiful desktop application (iced framework)
+- ✅ Dark/Light theme toggle
+- ✅ Real-time search interface
+- ✅ Sortable results table
+- ✅ Professional UI/UX
+
+### Phase 5.1: GUI Enhancements (Future)
+- Visual filter builders
+- Context menus and drag-and-drop
+- Export dialog in GUI
+- Settings panel
+- Charts and visualizations
 
 ## Architecture
 

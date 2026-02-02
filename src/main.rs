@@ -3,6 +3,7 @@ mod error;
 mod export;
 mod file_entry;
 mod filters;
+mod gui;
 mod history;
 mod index;
 mod interactive;
@@ -26,7 +27,7 @@ use std::sync::{Arc, Mutex};
 #[derive(Parser, Debug)]
 #[command(name = "nothing")]
 #[command(author = "Nothing Team")]
-#[command(version = "0.5.0")]
+#[command(version = "0.6.0")]
 #[command(about = "Fast Windows file search tool - reads NTFS MFT directly", long_about = None)]
 struct Args {
     /// Drive letter to scan (e.g., C, D, E)
@@ -52,6 +53,10 @@ struct Args {
     /// Include cloud storage folders (Google Drive, Dropbox, OneDrive)
     #[arg(short = 'c', long)]
     include_cloud: bool,
+
+    /// Launch GUI mode instead of CLI
+    #[arg(short = 'g', long)]
+    gui: bool,
 }
 
 fn main() -> Result<()> {
@@ -132,10 +137,8 @@ fn main() -> Result<()> {
         }
     }
 
-    // Enter interactive mode with monitoring if requested
-    if args.interactive {
-        println!("\nEntering interactive search mode with real-time monitoring...\n");
-
+    // Enter interactive mode (CLI or GUI) with monitoring if requested
+    if args.interactive || args.gui {
         // Wrap index in Arc<Mutex<>> for thread-safe access
         let index_arc = Arc::new(Mutex::new(index));
         let index_clone = Arc::clone(&index_arc);
@@ -159,8 +162,15 @@ fn main() -> Result<()> {
             None
         };
 
-        // Run interactive search
-        interactive::run_interactive_search_with_arc(&index_clone)?;
+        // Run interactive search (GUI or CLI)
+        if args.gui {
+            println!("\nLaunching GUI...\n");
+            let gui_index = Arc::clone(&index_clone);
+            gui::run(gui_index)?;
+        } else {
+            println!("\nEntering interactive search mode with real-time monitoring...\n");
+            interactive::run_interactive_search_with_arc(&index_clone)?;
+        }
 
         // Stop monitoring
         monitor.stop();
