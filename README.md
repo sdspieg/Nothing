@@ -4,17 +4,31 @@ A lightweight, fast Windows file search tool written in Rust that reads the NTFS
 
 ## Features
 
+### Core Search & Indexing
 - **Fast MFT Scanning**: Enumerates all files on an NTFS volume in seconds (155k files/sec)
 - **Full Metadata Support**: ✨ File sizes and timestamps (created, modified, accessed)
-- **Real-Time Monitoring**: 🔥 **NEW!** Index auto-updates as files change (enabled in interactive mode)
-- **Index Persistence**: 💾 **NEW!** Save/load index to disk for instant startup
+- **Real-Time Monitoring**: 🔥 Index auto-updates as files change (enabled in interactive mode)
+- **Index Persistence**: 💾 Save/load index to disk for instant startup (<10 seconds)
 - **Multi-Drive Scanning**: 🎉 Scan all fixed drives automatically with `--all-drives`
 - **Cloud Storage Integration**: 🎉 Index Google Drive, Dropbox, OneDrive with `--include-cloud`
-- **In-Memory Indexing**: Stores file paths and metadata for instant access
+
+### Phase 4: Advanced Search Features ✨ **NEW!**
+- **Advanced Filters**: Size, extension, date range, type filtering
+  - `size:>100mb` - Files larger than 100MB
+  - `ext:rs,md` - Filter by extensions
+  - `modified:7d` - Modified in last 7 days
+  - `type:file` - Files or directories only
+- **Export Results**: Export to CSV or JSON (Ctrl+E)
+- **Search History**: Navigate with ↑/↓ arrows, persists across sessions
+- **Performance Metrics**: Real-time stats (F2 to toggle)
+- **Interactive Help**: F1 for comprehensive help panel
+
+### User Experience
 - **Fuzzy Search**: Typo-tolerant search powered by nucleo-matcher
 - **Interactive CLI**: Real-time search results as you type
 - **Memory Optimized**: Efficient string storage (2-4 GB for 10M+ files)
 - **Color-Coded Results**: File/directory distinction with relevance scores
+- **Keyboard Shortcuts**: Full keyboard control for power users
 
 ## Requirements
 
@@ -119,14 +133,58 @@ Once in interactive mode:
 - **Results update instantly** as you type
 - **Top 50 results** shown, sorted by relevance
 - **Total match count** displayed
-- **Ctrl+C or Ctrl+D** to exit
 
 ### Search Features
 
+**Basic Search:**
 - **Fuzzy matching**: Typo-tolerant search (e.g., "dcuments" finds "Documents")
 - **Filename priority**: Matches in filenames rank higher than path matches
 - **Case-insensitive**: Search works regardless of capitalization
 - **Instant results**: Searches entire index in milliseconds
+
+**Advanced Filters (Phase 4):**
+
+Size filters:
+```
+size:>100mb          # Files larger than 100MB
+size:<1gb            # Files smaller than 1GB
+size:100kb-500kb     # Files between 100KB and 500KB
+```
+
+Extension filters:
+```
+ext:rs,md,txt        # Files with .rs, .md, or .txt extensions
+ext:mp4,avi          # Video files
+```
+
+Date filters:
+```
+modified:7d          # Modified in last 7 days
+modified:>2024-01-01 # Modified after Jan 1, 2024
+modified:<2024-12-31 # Modified before Dec 31, 2024
+created:30d          # Created in last 30 days
+```
+
+Type filters:
+```
+type:file            # Files only
+type:dir             # Directories only
+```
+
+Combine multiple filters:
+```
+video size:>100mb modified:7d        # Large recent videos
+readme ext:md size:>10kb             # README files in markdown
+config type:file modified:30d        # Config files modified last month
+```
+
+### Keyboard Shortcuts
+
+- **↑/↓** - Navigate search history
+- **Ctrl+E** - Export current results to CSV/JSON
+- **F1** - Toggle help panel
+- **F2** - Toggle performance statistics
+- **Ctrl+C or Ctrl+D** - Exit
 
 ## Example Output
 
@@ -216,16 +274,18 @@ Found 1,234 matches (showing top 50)
 - ✅ Index persistence (save/load to disk)
 - ✅ Cloud storage monitoring
 
-### Phase 4: Advanced Features (Future)
-- Search filters (size, date range, extension)
-- Export results to CSV/JSON
-- Search history
-- Performance metrics dashboard
+### Phase 4: Advanced Search Features ✅ COMPLETE
+- ✅ Advanced search filters (size, date range, extension, type)
+- ✅ Export results to CSV/JSON
+- ✅ Search history with arrow key navigation
+- ✅ Performance metrics dashboard
+- ✅ Interactive help system
 
 ### Phase 5: GUI (Future)
 - Native Windows GUI
 - Better visualization
 - Search result management
+- Drag-and-drop file operations
 
 ## Architecture
 

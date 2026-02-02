@@ -1,4 +1,5 @@
 use crate::file_entry::FileEntry;
+use crate::filters::SearchFilters;
 use crate::index::FileIndex;
 use nucleo_matcher::{Config, Matcher, Utf32Str};
 use nucleo_matcher::pattern::{Pattern, CaseMatching, Normalization};
@@ -23,9 +24,20 @@ impl SearchEngine {
         }
     }
 
-    /// Search the index with fuzzy matching
+    /// Search the index with fuzzy matching and optional filters
     /// Returns up to `limit` results sorted by relevance
     pub fn search(&mut self, index: &FileIndex, query: &str, limit: usize) -> Vec<SearchResult> {
+        self.search_with_filters(index, query, limit, &SearchFilters::default())
+    }
+
+    /// Search with filters
+    pub fn search_with_filters(
+        &mut self,
+        index: &FileIndex,
+        query: &str,
+        limit: usize,
+        filters: &SearchFilters,
+    ) -> Vec<SearchResult> {
         if query.is_empty() {
             return Vec::new();
         }
@@ -37,6 +49,11 @@ impl SearchEngine {
 
         // Search through all entries
         for entry in index.entries() {
+            // Apply filters first
+            if !filters.matches(entry) {
+                continue;
+            }
+
             // Convert strings to UTF-32 for nucleo
             let mut name_buf = Vec::new();
             let mut path_buf = Vec::new();
@@ -75,6 +92,16 @@ impl SearchEngine {
 
     /// Get total match count for a query (without limiting results)
     pub fn count_matches(&mut self, index: &FileIndex, query: &str) -> usize {
+        self.count_matches_with_filters(index, query, &SearchFilters::default())
+    }
+
+    /// Count matches with filters
+    pub fn count_matches_with_filters(
+        &mut self,
+        index: &FileIndex,
+        query: &str,
+        filters: &SearchFilters,
+    ) -> usize {
         if query.is_empty() {
             return 0;
         }
@@ -83,6 +110,11 @@ impl SearchEngine {
         let mut count = 0;
 
         for entry in index.entries() {
+            // Apply filters first
+            if !filters.matches(entry) {
+                continue;
+            }
+
             let mut name_buf = Vec::new();
             let mut path_buf = Vec::new();
 

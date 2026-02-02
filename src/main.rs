@@ -1,8 +1,12 @@
 mod cloud_monitor;
 mod error;
+mod export;
 mod file_entry;
+mod filters;
+mod history;
 mod index;
 mod interactive;
+mod metrics;
 mod mft_reader;
 mod mft_reader_ntfs;
 mod multi_drive;
@@ -22,7 +26,7 @@ use std::sync::{Arc, Mutex};
 #[derive(Parser, Debug)]
 #[command(name = "nothing")]
 #[command(author = "Nothing Team")]
-#[command(version = "0.2.0")]
+#[command(version = "0.5.0")]
 #[command(about = "Fast Windows file search tool - reads NTFS MFT directly", long_about = None)]
 struct Args {
     /// Drive letter to scan (e.g., C, D, E)
