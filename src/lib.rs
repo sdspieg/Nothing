@@ -1,4 +1,5 @@
 // Library exports for use by binaries and tests
+pub mod export;
 pub mod file_entry;
 pub mod filters;
 pub mod index;

@@ -85,8 +85,14 @@ pub enum Message {
     /// Open containing folder
     OpenFolder,
 
-    /// Export results
-    Export,
+    /// Export results to CSV
+    ExportCSV,
+
+    /// Export results to JSON
+    ExportJSON,
+
+    /// Copy path to clipboard
+    CopyPath,
 
     /// Show settings
     ShowSettings,
@@ -191,8 +197,47 @@ impl NothingGui {
                 }
             }
 
-            Message::Export => {
-                // TODO: Show export dialog
+            Message::ExportCSV => {
+                if !self.results.is_empty() {
+                    // Use file dialog to select save location
+                    let file_dialog = rfd::FileDialog::new()
+                        .add_filter("CSV", &["csv"])
+                        .set_file_name("search_results.csv");
+
+                    if let Some(path) = file_dialog.save_file() {
+                        use crate::export;
+                        if let Err(e) = export::export_csv(&self.results, path.to_str().unwrap()) {
+                            eprintln!("Export failed: {}", e);
+                        }
+                    }
+                }
+            }
+
+            Message::ExportJSON => {
+                if !self.results.is_empty() {
+                    let file_dialog = rfd::FileDialog::new()
+                        .add_filter("JSON", &["json"])
+                        .set_file_name("search_results.json");
+
+                    if let Some(path) = file_dialog.save_file() {
+                        use crate::export;
+                        if let Err(e) = export::export_json(&self.results, path.to_str().unwrap()) {
+                            eprintln!("Export failed: {}", e);
+                        }
+                    }
+                }
+            }
+
+            Message::CopyPath => {
+                if let Some(index) = self.selected_index {
+                    if let Some(result) = self.results.get(index) {
+                        // Use iced's clipboard (if available) or system clipboard
+                        use std::process::Command;
+                        let _ = Command::new("cmd")
+                            .args(&["/C", "echo", &result.entry.path, "|", "clip"])
+                            .output();
+                    }
+                }
             }
 
             Message::ShowSettings => {
@@ -270,6 +315,23 @@ impl NothingGui {
                                     let _ = open::that(parent);
                                 }
                             }
+                        }
+                    }
+                    Key::Character(c) if c == "c" && modifiers.control() => {
+                        // Copy path to clipboard
+                        if let Some(index) = self.selected_index {
+                            if let Some(result) = self.results.get(index) {
+                                use std::process::Command;
+                                let _ = Command::new("cmd")
+                                    .args(&["/C", "echo", &result.entry.path, "|", "clip"])
+                                    .output();
+                            }
+                        }
+                    }
+                    Key::Character(c) if c == "e" && modifiers.control() => {
+                        // Export to CSV
+                        if !self.results.is_empty() {
+                            return Task::perform(async {}, |_| Message::ExportCSV);
                         }
                     }
                     _ => {}
@@ -379,10 +441,20 @@ impl NothingGui {
         .on_press(Message::ToggleStats)
         .padding(8);
 
+        let export_csv_button = button(text("📄 Export CSV").size(14))
+            .on_press(Message::ExportCSV)
+            .padding(8);
+
+        let export_json_button = button(text("📋 Export JSON").size(14))
+            .on_press(Message::ExportJSON)
+            .padding(8);
+
         let title_row = row![
             text("Nothing - Fast File Search")
                 .size(16)
                 .width(Length::Fill),
+            export_csv_button,
+            export_json_button,
             filters_button,
             stats_button,
             theme_button,
@@ -413,7 +485,7 @@ impl NothingGui {
             .size(18)
             .width(Length::Fill);
 
-        let hints = text("↑/↓ Navigate • Enter Open • Esc Clear • Ctrl+O Open Folder")
+        let hints = text("↑/↓ Navigate • Enter Open • Esc Clear • Ctrl+O Open Folder • Ctrl+C Copy Path • Ctrl+E Export")
             .size(11)
             .style(|theme: &Theme| text::Style {
                 color: Some(theme.extended_palette().background.strong.text),
