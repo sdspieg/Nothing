@@ -30,6 +30,27 @@ A lightweight, fast Windows file search tool written in Rust that reads the NTFS
 - **Color-Coded Results**: File/directory distinction with relevance scores
 - **Keyboard Shortcuts**: Full keyboard control for power users
 
+## Recent Updates (v0.6.1)
+
+### Critical Bug Fixes
+- **File Path Resolution**: Fixed incorrect file paths where files appeared at root level (e.g., `C:\filename`) instead of their actual location. Implemented two-pass MFT scanning for accurate path resolution.
+- **UI Responsiveness**: Fixed GUI freezing when typing quickly. Search requests now properly cancel outdated queries, providing smooth typing experience.
+
+### Important: Index Rebuild Required
+If you experience "Windows cannot find" errors when opening files, you need to rebuild your indexes:
+
+```bash
+# Delete cached indexes
+del %USERPROFILE%\.nothing\*.bin
+
+# Rescan drives (run as Administrator)
+nothing.exe --gui
+# or
+nothing.exe --all-drives --interactive
+```
+
+The new two-pass scanning algorithm ensures all file paths are correctly resolved.
+
 ## Requirements
 
 - Windows 10/11

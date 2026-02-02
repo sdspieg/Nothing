@@ -62,49 +62,141 @@ impl MftReaderNtfs {
         // Pre-allocate index
         index.reserve(10_000_000);
 
-        // Enumerate all MFT entries
-        let mut count = 0u64;
-        let progress_interval = 100_000u64;
+        // TWO-PASS APPROACH to fix path resolution issues:
+        // Pass 1: Build complete parent_map with all directory paths
+        // Pass 2: Process all files with complete parent information
 
-        // Iterate through all possible MFT record numbers
-        // The MFT can have gaps, so we iterate until we hit consistent errors
+        println!("Pass 1: Collecting directories...");
+
+        // Store directory info for processing
+        struct DirInfo {
+            record_number: u64,
+            name: String,
+            parent_id: u64,
+        }
+        let mut directories: Vec<DirInfo> = Vec::new();
+
+        let mut pass1_count = 0u64;
         let mut consecutive_errors = 0;
         let max_consecutive_errors = 1000;
+        let progress_interval = 100_000u64;
 
+        // Collect all directories first
         for record_number in 0..u64::MAX {
-            // Try to get this MFT record
             match ntfs.file(&mut file, record_number) {
                 Ok(ntfs_file) => {
                     consecutive_errors = 0;
-                    count += 1;
+                    pass1_count += 1;
 
-                    // Show progress
-                    if count % progress_interval == 0 {
-                        println!("Progress: {} files...", count);
+                    if pass1_count % progress_interval == 0 {
+                        println!("Pass 1: {} entries...", pass1_count);
                     }
 
-                    // Process the file
-                    if let Err(e) = self.process_ntfs_file(
-                        &mut file,
-                        &ntfs,
-                        &ntfs_file,
-                        index,
-                        &mut parent_map,
-                    ) {
-                        if count < 1000 {
-                            eprintln!("Warning: Failed to process record {}: {}", record_number, e);
+                    // Only collect directories in pass 1
+                    if ntfs_file.is_directory() {
+                        if let Ok(file_name) = self.get_best_file_name(&mut file, &ntfs_file) {
+                            let name = file_name.name().to_string_lossy().to_string();
+                            if !name.starts_with('$') && name != "." && name != ".." {
+                                let parent_id = file_name.parent_directory_reference().file_record_number();
+                                directories.push(DirInfo {
+                                    record_number,
+                                    name,
+                                    parent_id,
+                                });
+                            }
                         }
-                    }
-
-                    // Periodic cleanup
-                    if count % 1_000_000 == 0 && count > 1_000_000 {
-                        parent_map.retain(|_, path| Arc::strong_count(path) > 1);
                     }
                 }
                 Err(_) => {
                     consecutive_errors += 1;
                     if consecutive_errors >= max_consecutive_errors {
-                        // Likely reached end of MFT
+                        break;
+                    }
+                }
+            }
+        }
+
+        println!("Pass 1: Found {} directories, resolving paths...", directories.len());
+
+        // Iteratively resolve directory paths until stable
+        let mut unresolved = directories.len();
+        let mut iteration = 0;
+        const MAX_ITERATIONS: usize = 10;
+
+        while unresolved > 0 && iteration < MAX_ITERATIONS {
+            iteration += 1;
+            let prev_size = parent_map.len();
+
+            for dir in &directories {
+                let file_id = dir.record_number;
+
+                // Skip if already resolved
+                if parent_map.contains_key(&file_id) {
+                    continue;
+                }
+
+                // Try to build path
+                let path = if dir.parent_id == 5 || dir.parent_id == 0 {
+                    // Root level
+                    format!("{}:\\{}", self.drive_letter, dir.name).into()
+                } else if let Some(parent_path) = parent_map.get(&dir.parent_id) {
+                    // Parent found - build full path
+                    let mut full_path = String::with_capacity(parent_path.len() + 1 + dir.name.len());
+                    full_path.push_str(parent_path);
+                    full_path.push('\\');
+                    full_path.push_str(&dir.name);
+                    full_path.into()
+                } else {
+                    // Parent not found yet - skip this iteration
+                    continue;
+                };
+
+                parent_map.insert(file_id, path);
+            }
+
+            let newly_resolved = parent_map.len() - prev_size;
+            unresolved = directories.len() - parent_map.len();
+            println!("Pass 1 iteration {}: resolved {} directories ({} remaining)",
+                     iteration, newly_resolved, unresolved);
+
+            if newly_resolved == 0 {
+                break;
+            }
+        }
+
+        println!("Pass 1 complete: {} directories mapped", parent_map.len());
+
+        // Reset for pass 2
+        println!("Pass 2: Processing all files...");
+        let mut pass2_count = 0u64;
+        consecutive_errors = 0;
+
+        for record_number in 0..u64::MAX {
+            match ntfs.file(&mut file, record_number) {
+                Ok(ntfs_file) => {
+                    consecutive_errors = 0;
+                    pass2_count += 1;
+
+                    if pass2_count % progress_interval == 0 {
+                        println!("Pass 2: {} files...", pass2_count);
+                    }
+
+                    // Process all files with complete parent_map
+                    if let Err(e) = self.process_ntfs_file(
+                        &mut file,
+                        &ntfs,
+                        &ntfs_file,
+                        index,
+                        &parent_map,
+                    ) {
+                        if pass2_count < 1000 {
+                            eprintln!("Warning: Failed to process record {}: {}", record_number, e);
+                        }
+                    }
+                }
+                Err(_) => {
+                    consecutive_errors += 1;
+                    if consecutive_errors >= max_consecutive_errors {
                         break;
                     }
                 }
@@ -113,9 +205,9 @@ impl MftReaderNtfs {
 
         let elapsed = start_time.elapsed();
         let files_per_sec = if elapsed.as_secs() > 0 {
-            count / elapsed.as_secs()
+            pass2_count / elapsed.as_secs()
         } else {
-            count
+            pass2_count
         };
 
         println!("\nScan complete!");
@@ -131,14 +223,68 @@ impl MftReaderNtfs {
         Ok(())
     }
 
-    /// Process a single NTFS file entry
+    /// Build directory path and add to parent_map (Pass 1)
+    fn build_directory_path<'a, T>(
+        &self,
+        fs: &mut T,
+        ntfs_file: &NtfsFile<'a>,
+        parent_map: &mut HashMap<u64, Arc<str>>,
+    ) -> Result<()>
+    where
+        T: std::io::Read + std::io::Seek,
+    {
+        let file_name = self.get_best_file_name(fs, ntfs_file)?;
+        let name = file_name.name().to_string_lossy().to_string();
+
+        // Skip system files
+        if name.starts_with('$') || name == "." || name == ".." {
+            return Ok(());
+        }
+
+        let file_id = ntfs_file.file_record_number();
+        let parent_id = file_name.parent_directory_reference().file_record_number();
+
+        // Build path recursively following parent chain
+        let path = self.build_path_recursive(&name, parent_id, parent_map);
+        parent_map.insert(file_id, path);
+
+        Ok(())
+    }
+
+    /// Build path recursively by following parent chain
+    fn build_path_recursive(
+        &self,
+        name: &str,
+        parent_id: u64,
+        parent_map: &HashMap<u64, Arc<str>>,
+    ) -> Arc<str> {
+        // Root directory (MFT entry 5)
+        if parent_id == 5 || parent_id == 0 {
+            return format!("{}:\\{}", self.drive_letter, name).into();
+        }
+
+        // Try to find parent path
+        if let Some(parent_path) = parent_map.get(&parent_id) {
+            let mut full_path = String::with_capacity(parent_path.len() + 1 + name.len());
+            full_path.push_str(parent_path);
+            full_path.push('\\');
+            full_path.push_str(name);
+            full_path.into()
+        } else {
+            // Parent not found - this can happen for nested directories
+            // Default to root and let subsequent iterations fix it
+            format!("{}:\\{}", self.drive_letter, name).into()
+        }
+    }
+
+    /// Process a single NTFS file entry (Pass 2)
     fn process_ntfs_file<'a, T>(
         &self,
         fs: &mut T,
         _ntfs: &Ntfs,
         ntfs_file: &NtfsFile<'a>,
         index: &mut FileIndex,
-        parent_map: &mut HashMap<u64, Arc<str>>,
+        parent_map: &HashMap<u64, Arc<str>>,
     ) -> Result<()>
     where
         T: std::io::Read + std::io::Seek,
@@ -166,13 +312,8 @@ impl MftReaderNtfs {
         // Get timestamps
         let (created, modified, accessed) = self.get_timestamps(fs, ntfs_file)?;
 
-        // Build full path
+        // Build full path using complete parent_map from Pass 1
         let path = self.build_path_arc(&name, parent_id, parent_map);
-
-        // Store directory path for children
-        if is_directory {
-            parent_map.insert(file_id, Arc::clone(&path));
-        }
 
         // Create file entry
         let file_entry = FileEntry::new(

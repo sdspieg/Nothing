@@ -5,6 +5,27 @@ use nothing::persistence;
 use std::sync::{Arc, Mutex};
 
 fn main() -> anyhow::Result<()> {
+    // CRITICAL SAFETY CHECK: Prevent overwriting real indexes!
+    let cache_path = persistence::get_index_path('C')?;
+
+    if std::path::Path::new(&cache_path).exists() {
+        let metadata = std::fs::metadata(&cache_path)?;
+
+        // If the index is larger than 100 KB, it's probably a real index with actual data
+        if metadata.len() > 100_000 {
+            eprintln!("\n❌ ERROR: A real index file already exists!");
+            eprintln!("   Location: {}", cache_path);
+            eprintln!("   Size: {:.2} MB", metadata.len() as f64 / 1_024_000.0);
+            eprintln!("\n   This tool is ONLY for creating test data.");
+            eprintln!("   Running it would DESTROY your real index with {} files!",
+                     "millions of");
+            eprintln!("\n   To create test data, first delete the existing index:");
+            eprintln!("   rm {}", cache_path);
+            eprintln!("\n   ABORTING to protect your data.");
+            std::process::exit(1);
+        }
+    }
+
     println!("Creating test index with sample data...");
 
     let mut index = FileIndex::new();

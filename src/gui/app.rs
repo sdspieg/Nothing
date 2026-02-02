@@ -44,6 +44,15 @@ pub struct NothingGui {
 
     /// Selected result index
     selected_index: Option<usize>,
+
+    /// Last click time and index for double-click detection
+    last_click: Option<(usize, std::time::Instant)>,
+
+    /// Whether a search is currently in progress
+    searching: bool,
+
+    /// Search ID for canceling outdated searches
+    search_id: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -61,8 +70,11 @@ pub enum Message {
     /// Search query changed
     SearchChanged(String),
 
-    /// Perform the actual search (debounced)
-    PerformSearch,
+    /// Perform the actual search (debounced) with search ID
+    PerformSearch(u64),
+
+    /// Search completed with results and search ID
+    SearchComplete(u64, Vec<SearchResult>, std::time::Duration),
 
     /// Theme toggled
     ToggleTheme,
@@ -128,6 +140,9 @@ impl NothingGui {
             sort_by: SortColumn::Name,
             sort_ascending: true,
             selected_index: None,
+            last_click: None,
+            searching: false,
+            search_id: 0,
         }
     }
 
@@ -139,17 +154,63 @@ impl NothingGui {
         match message {
             Message::SearchChanged(query) => {
                 self.query = query;
-                // Debounce: only perform search after 150ms delay
+                // Increment search ID to invalidate previous searches
+                self.search_id = self.search_id.wrapping_add(1);
+                let search_id = self.search_id;
+
+                // Debounce: only perform search after 300ms delay
+                // This gives users time to type without triggering too many searches
                 return Task::perform(
-                    async {
-                        tokio::time::sleep(tokio::time::Duration::from_millis(150)).await;
+                    async move {
+                        tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+                        search_id
                     },
-                    |_| Message::PerformSearch,
+                    Message::PerformSearch,
                 );
             }
 
-            Message::PerformSearch => {
-                self.perform_search();
+            Message::PerformSearch(search_id) => {
+                // Only perform search if this is still the most recent query
+                if search_id != self.search_id {
+                    // This search has been superseded by a newer one
+                    return Task::none();
+                }
+
+                // Spawn async search to avoid blocking UI
+                self.searching = true;
+                let index = Arc::clone(&self.index);
+                let query = self.query.clone();
+                let filters = self.filters.clone();
+
+                return Task::perform(
+                    async move {
+                        let start = Instant::now();
+                        let index = index.lock().unwrap();
+                        let mut search_engine = SearchEngine::new();
+
+                        let results = search_engine.search_with_filters(
+                            &index,
+                            &query,
+                            100,
+                            &filters,
+                        );
+
+                        drop(index);
+                        (search_id, results, start.elapsed())
+                    },
+                    |(search_id, results, elapsed)| Message::SearchComplete(search_id, results, elapsed),
+                );
+            }
+
+            Message::SearchComplete(search_id, results, elapsed) => {
+                // Only apply results if this is still the most recent search
+                if search_id == self.search_id {
+                    self.results = results;
+                    self.last_search_time = Some(elapsed);
+                    self.searching = false;
+                    self.sort_results();
+                }
+                // Otherwise ignore these stale results
             }
 
             Message::ToggleTheme => {
@@ -175,7 +236,26 @@ impl NothingGui {
             }
 
             Message::SelectResult(index) => {
-                self.selected_index = Some(index);
+                // Double-click detection (300ms threshold)
+                let now = std::time::Instant::now();
+                let is_double_click = self.last_click
+                    .as_ref()
+                    .map(|(last_idx, last_time)| {
+                        *last_idx == index && now.duration_since(*last_time).as_millis() < 300
+                    })
+                    .unwrap_or(false);
+
+                if is_double_click {
+                    // Double-click detected - open the file
+                    self.last_click = None;
+                    if let Some(result) = self.results.get(index) {
+                        let _ = open::that(&result.entry.path);
+                    }
+                } else {
+                    // Single click - just select
+                    self.selected_index = Some(index);
+                    self.last_click = Some((index, now));
+                }
             }
 
             Message::OpenResult => {
@@ -572,6 +652,26 @@ impl NothingGui {
                 .into();
         }
 
+        // Show searching indicator
+        if self.searching {
+            let searching_message = column![
+                Space::with_height(Length::Fill),
+                text("🔍 Searching 22.4M files...")
+                    .size(20)
+                    .color(iced::Color::from_rgb(0.7, 0.7, 0.9))
+                    .width(Length::Fill)
+                    .align_x(iced::alignment::Horizontal::Center),
+                Space::with_height(Length::Fill),
+            ]
+            .width(Length::Fill)
+            .height(Length::Fill);
+
+            return container(searching_message)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into();
+        }
+
         if self.results.is_empty() {
             let no_results = column![
                 Space::with_height(Length::Fill),
@@ -636,15 +736,30 @@ impl NothingGui {
 
             let is_selected = self.selected_index == Some(index);
 
+            // Use white/light text for better contrast in dark mode
+            let text_color = if is_selected {
+                iced::Color::WHITE
+            } else {
+                iced::Color::from_rgb(0.9, 0.9, 0.9)
+            };
+
             let row_content = row![
                 text(format!("{} {}", entry_type, result.entry.name))
                     .size(14)
+                    .color(text_color)
                     .width(Length::FillPortion(3)),
                 text(&result.entry.path)
                     .size(12)
+                    .color(text_color)
                     .width(Length::FillPortion(5)),
-                text(size_str).size(12).width(Length::FillPortion(2)),
-                text(modified_str).size(12).width(Length::FillPortion(2)),
+                text(size_str)
+                    .size(12)
+                    .color(text_color)
+                    .width(Length::FillPortion(2)),
+                text(modified_str)
+                    .size(12)
+                    .color(text_color)
+                    .width(Length::FillPortion(2)),
             ]
             .spacing(5)
             .padding(8);

@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.6.1] - 2026-02-02
+
+### 🐛 Critical Bug Fixes
+
+**File Path Resolution Fix:**
+- ✅ Fixed incorrect file paths (e.g., "C:\filename" instead of full path)
+- ✅ Implemented two-pass MFT scanning for accurate directory path resolution
+- ✅ Pass 1: Collect all directories and iteratively resolve parent paths
+- ✅ Pass 2: Process all files with complete parent directory map
+- ✅ Resolves "Windows cannot find" errors when opening files via double-click
+- ⚠️ **NOTE:** Requires rebuilding indexes - delete `~/.nothing/*.bin` and rescan
+
+**UI Responsiveness Fix:**
+- ✅ Fixed GUI freezing when typing search queries
+- ✅ Implemented search ID tracking to cancel outdated searches
+- ✅ Increased debounce time from 150ms to 300ms for better typing experience
+- ✅ Only most recent search executes, preventing queue buildup
+- ✅ Smooth typing experience even with 22M+ files indexed
+
+### 🔧 Technical Changes
+
+**Modified Files:**
+- `src/mft_reader_ntfs.rs` - Two-pass scanning algorithm (170 lines changed)
+- `src/gui/app.rs` - Search cancellation with ID tracking
+
+**Algorithm Improvements:**
+- Directory path resolution now handles out-of-order MFT entries correctly
+- Search cancellation prevents multiple concurrent searches
+- Better memory efficiency with iterative parent path resolution
+
 ## [0.6.0] - 2026-02-02
 
 ### 🎨 PHASE 5 COMPLETE - Modern GUI with Dark/Light Mode!

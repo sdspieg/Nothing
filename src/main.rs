@@ -27,7 +27,7 @@ use std::sync::{Arc, Mutex};
 #[derive(Parser, Debug)]
 #[command(name = "nothing")]
 #[command(author = "Nothing Team")]
-#[command(version = "0.6.0")]
+#[command(version = "0.6.1")]
 #[command(about = "Fast Windows file search tool - reads NTFS MFT directly", long_about = None)]
 struct Args {
     /// Drive letter to scan (e.g., C, D, E)
@@ -75,23 +75,47 @@ fn main() -> Result<()> {
         vec![args.drive]
     };
 
-    // Try to load cached index
-    let mut index = if !drives.is_empty() {
-        let cache_path = persistence::get_index_path(drives[0])?;
-        match persistence::load_index(&cache_path) {
-            Ok(idx) => {
-                println!("✅ Loaded cached index from disk");
-                println!("   {} files, {} directories", idx.file_count(), idx.directory_count());
-                idx
-            }
-            Err(_) => {
-                println!("No cached index found, performing full scan...");
-                FileIndex::new()
+    // Try to load cached indexes for all available drives
+    let mut index = FileIndex::new();
+
+    // Load indexes for all NTFS drives with cached indexes
+    let available_drives: Vec<char> = multi_drive::get_all_drives();
+    let mut loaded_count = 0;
+    let mut total_files = 0;
+    let mut total_dirs = 0;
+
+    for drive in &available_drives {
+        if let Ok(cache_path) = persistence::get_index_path(*drive) {
+            if std::path::Path::new(&cache_path).exists() {
+                match persistence::load_index(&cache_path) {
+                    Ok(drive_index) => {
+                        let files = drive_index.file_count();
+                        let dirs = drive_index.directory_count();
+                        println!("✅ Loaded {} drive: {} files, {} directories", drive, files, dirs);
+
+                        // Merge this drive's index into the main index
+                        for entry in drive_index.entries() {
+                            index.add_entry(entry.clone());
+                        }
+
+                        loaded_count += 1;
+                        total_files += files;
+                        total_dirs += dirs;
+                    }
+                    Err(e) => {
+                        eprintln!("⚠️  Failed to load {} drive index: {}", drive, e);
+                    }
+                }
             }
         }
+    }
+
+    if loaded_count > 0 {
+        println!("\n📊 Combined Index: {} drives, {} total files, {} directories",
+                 loaded_count, total_files, total_dirs);
     } else {
-        FileIndex::new()
-    };
+        println!("No cached indexes found.");
+    }
 
     // If index is empty, scan drives
     if index.is_empty() {
