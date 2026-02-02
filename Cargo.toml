@@ -3,6 +3,10 @@ name = "nothing"
 version = "0.6.0"
 edition = "2021"
 
+[lib]
+name = "nothing"
+path = "src/lib.rs"
+
 [dependencies]
 usn-journal-rs = "0.2"
 ntfs = "0.4"
@@ -27,6 +31,10 @@ iced = { version = "0.13", features = ["tokio", "image"] }
 tokio = { version = "1", features = ["full"] }
 rfd = "0.14"
 open = "5.0"
+
+[[bin]]
+name = "create_test_index"
+path = "src/bin/create_test_index.rs"
 
 [profile.release]
 opt-level = 3
