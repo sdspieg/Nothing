@@ -9,6 +9,15 @@ use iced::{
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+/// Application loading state
+#[derive(Debug, Clone)]
+enum LoadingState {
+    /// Currently loading indexes
+    Loading { drives_loaded: usize, total_drives: usize },
+    /// Loading complete, ready to use
+    Ready,
+}
+
 /// Main application state
 pub struct NothingGui {
     /// File index (shared with monitoring threads)
@@ -53,6 +62,9 @@ pub struct NothingGui {
 
     /// Search ID for canceling outdated searches
     search_id: u64,
+
+    /// Loading state
+    loading_state: LoadingState,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -118,6 +130,60 @@ pub enum Message {
     /// Clear search query
     ClearSearch,
 
+    /// Filter: Modified in last 7 days
+    FilterModifiedLast7Days,
+
+    /// Filter: Modified in last 30 days
+    FilterModifiedLast30Days,
+
+    /// Filter: Modified in last year
+    FilterModifiedLastYear,
+
+    /// Filter: Files smaller than 1MB
+    FilterSizeSmall,
+
+    /// Filter: Files between 1-100 MB
+    FilterSizeMedium,
+
+    /// Filter: Files larger than 100 MB
+    FilterSizeLarge,
+
+    /// Filter: Files only
+    FilterTypeFiles,
+
+    /// Filter: Directories only
+    FilterTypeDirs,
+
+    /// Filter: Document extensions
+    FilterExtDocuments,
+
+    /// Filter: Image extensions
+    FilterExtImages,
+
+    /// Filter: Video extensions
+    FilterExtVideos,
+
+    /// Filter: Audio extensions
+    FilterExtAudio,
+
+    /// Filter: Code extensions
+    FilterExtCode,
+
+    /// Filter: Archive extensions
+    FilterExtArchives,
+
+    /// Filter: Spreadsheet extensions
+    FilterExtSpreadsheets,
+
+    /// Filter: Presentation extensions
+    FilterExtPresentations,
+
+    /// Index loading progress update
+    LoadingProgress(usize, usize),
+
+    /// Index loading complete
+    LoadingComplete,
+
     /// Navigate results (up/down)
     NavigateResults(i32), // -1 for up, +1 for down
 
@@ -143,6 +209,7 @@ impl NothingGui {
             last_click: None,
             searching: false,
             search_id: 0,
+            loading_state: LoadingState::Ready, // Start as Ready since main.rs loads indexes
         }
     }
 
@@ -334,6 +401,168 @@ impl NothingGui {
                 self.perform_search();
             }
 
+            Message::FilterModifiedLast7Days => {
+                use chrono::{Utc, Duration};
+                self.filters.modified_after = Some(Utc::now() - Duration::days(7));
+                self.filters.modified_before = None;
+                self.perform_search();
+            }
+
+            Message::FilterModifiedLast30Days => {
+                use chrono::{Utc, Duration};
+                self.filters.modified_after = Some(Utc::now() - Duration::days(30));
+                self.filters.modified_before = None;
+                self.perform_search();
+            }
+
+            Message::FilterModifiedLastYear => {
+                use chrono::{Utc, Duration};
+                self.filters.modified_after = Some(Utc::now() - Duration::days(365));
+                self.filters.modified_before = None;
+                self.perform_search();
+            }
+
+            Message::FilterSizeSmall => {
+                self.filters.min_size = None;
+                self.filters.max_size = Some(1024 * 1024); // 1 MB
+                self.perform_search();
+            }
+
+            Message::FilterSizeMedium => {
+                self.filters.min_size = Some(1024 * 1024); // 1 MB
+                self.filters.max_size = Some(100 * 1024 * 1024); // 100 MB
+                self.perform_search();
+            }
+
+            Message::FilterSizeLarge => {
+                self.filters.min_size = Some(100 * 1024 * 1024); // 100 MB
+                self.filters.max_size = None;
+                self.perform_search();
+            }
+
+            Message::FilterTypeFiles => {
+                self.filters.is_directory = Some(false); // false = files only
+                self.perform_search();
+            }
+
+            Message::FilterTypeDirs => {
+                self.filters.is_directory = Some(true); // true = directories only
+                self.perform_search();
+            }
+
+            Message::FilterExtDocuments => {
+                self.filters.extensions = vec![
+                    "pdf".to_string(),
+                    "doc".to_string(),
+                    "docx".to_string(),
+                    "txt".to_string(),
+                    "odt".to_string(),
+                    "rtf".to_string(),
+                ];
+                self.perform_search();
+            }
+
+            Message::FilterExtImages => {
+                self.filters.extensions = vec![
+                    "jpg".to_string(),
+                    "jpeg".to_string(),
+                    "png".to_string(),
+                    "gif".to_string(),
+                    "bmp".to_string(),
+                    "svg".to_string(),
+                ];
+                self.perform_search();
+            }
+
+            Message::FilterExtVideos => {
+                self.filters.extensions = vec![
+                    "mp4".to_string(),
+                    "avi".to_string(),
+                    "mkv".to_string(),
+                    "mov".to_string(),
+                    "wmv".to_string(),
+                    "flv".to_string(),
+                    "webm".to_string(),
+                    "m4v".to_string(),
+                ];
+                self.perform_search();
+            }
+
+            Message::FilterExtAudio => {
+                self.filters.extensions = vec![
+                    "mp3".to_string(),
+                    "wav".to_string(),
+                    "flac".to_string(),
+                    "aac".to_string(),
+                    "ogg".to_string(),
+                    "wma".to_string(),
+                    "m4a".to_string(),
+                ];
+                self.perform_search();
+            }
+
+            Message::FilterExtCode => {
+                self.filters.extensions = vec![
+                    "rs".to_string(),
+                    "py".to_string(),
+                    "js".to_string(),
+                    "ts".to_string(),
+                    "java".to_string(),
+                    "cpp".to_string(),
+                    "c".to_string(),
+                    "h".to_string(),
+                    "cs".to_string(),
+                    "go".to_string(),
+                    "rb".to_string(),
+                    "php".to_string(),
+                ];
+                self.perform_search();
+            }
+
+            Message::FilterExtArchives => {
+                self.filters.extensions = vec![
+                    "zip".to_string(),
+                    "rar".to_string(),
+                    "7z".to_string(),
+                    "tar".to_string(),
+                    "gz".to_string(),
+                    "bz2".to_string(),
+                    "xz".to_string(),
+                ];
+                self.perform_search();
+            }
+
+            Message::FilterExtSpreadsheets => {
+                self.filters.extensions = vec![
+                    "xlsx".to_string(),
+                    "xls".to_string(),
+                    "csv".to_string(),
+                    "ods".to_string(),
+                ];
+                self.perform_search();
+            }
+
+            Message::FilterExtPresentations => {
+                self.filters.extensions = vec![
+                    "pptx".to_string(),
+                    "ppt".to_string(),
+                    "odp".to_string(),
+                    "key".to_string(),
+                ];
+                self.perform_search();
+            }
+
+            Message::LoadingProgress(loaded, total) => {
+                self.loading_state = LoadingState::Loading {
+                    drives_loaded: loaded,
+                    total_drives: total,
+                };
+            }
+
+            Message::LoadingComplete => {
+                self.loading_state = LoadingState::Ready;
+            }
+
             Message::ClearSearch => {
                 self.query.clear();
                 self.results.clear();
@@ -423,6 +652,43 @@ impl NothingGui {
     }
 
     fn view(&self) -> Element<Message> {
+        // Show loading screen if still loading
+        if let LoadingState::Loading { drives_loaded, total_drives } = self.loading_state {
+            let loading_message = column![
+                Space::with_height(Length::Fill),
+                text("Loading Indexes...")
+                    .size(32)
+                    .color(iced::Color::from_rgb(0.9, 0.9, 0.9))
+                    .width(Length::Fill)
+                    .align_x(iced::alignment::Horizontal::Center),
+                Space::with_height(20),
+                text(format!("Loading drive {} of {}...", drives_loaded, total_drives))
+                    .size(20)
+                    .color(iced::Color::from_rgb(0.7, 0.7, 0.7))
+                    .width(Length::Fill)
+                    .align_x(iced::alignment::Horizontal::Center),
+                Space::with_height(10),
+                text("Please wait...")
+                    .size(16)
+                    .color(iced::Color::from_rgb(0.6, 0.6, 0.6))
+                    .width(Length::Fill)
+                    .align_x(iced::alignment::Horizontal::Center),
+                Space::with_height(Length::Fill),
+            ]
+            .width(Length::Fill)
+            .height(Length::Fill);
+
+            return container(loading_message)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(|theme: &Theme| {
+                    container::Style::default()
+                        .background(theme.extended_palette().background.base.color)
+                })
+                .into();
+        }
+
+        // Normal view when ready
         let title_bar = self.view_title_bar();
         let search_bar = self.view_search_bar();
         let content = self.view_content();
@@ -607,15 +873,110 @@ impl NothingGui {
     fn view_filter_panel(&self) -> Element<Message> {
         let title = text("Filters").size(16).width(Length::Fill);
 
-        let clear_button = button(text("Clear All").size(14))
+        // Modified date section
+        let modified_label = text("Modified Date").size(14);
+        let modified_last_7d = button(text("Last 7 days").size(12))
+            .on_press(Message::FilterModifiedLast7Days)
+            .padding(6);
+        let modified_last_30d = button(text("Last 30 days").size(12))
+            .on_press(Message::FilterModifiedLast30Days)
+            .padding(6);
+        let modified_last_year = button(text("Last year").size(12))
+            .on_press(Message::FilterModifiedLastYear)
+            .padding(6);
+
+        // Size filter section
+        let size_label = text("File Size").size(14);
+        let size_small = button(text("< 1 MB").size(12))
+            .on_press(Message::FilterSizeSmall)
+            .padding(6);
+        let size_medium = button(text("1-100 MB").size(12))
+            .on_press(Message::FilterSizeMedium)
+            .padding(6);
+        let size_large = button(text("> 100 MB").size(12))
+            .on_press(Message::FilterSizeLarge)
+            .padding(6);
+
+        // Type filter section
+        let type_label = text("Type").size(14);
+        let type_files = button(text("Files only").size(12))
+            .on_press(Message::FilterTypeFiles)
+            .padding(6);
+        let type_dirs = button(text("Directories only").size(12))
+            .on_press(Message::FilterTypeDirs)
+            .padding(6);
+
+        // Extension filter (common types)
+        let ext_label = text("Extensions").size(14);
+
+        // Quick preset buttons
+        let ext_docs = button(text("Documents").size(12))
+            .on_press(Message::FilterExtDocuments)
+            .padding(6);
+        let ext_images = button(text("Images").size(12))
+            .on_press(Message::FilterExtImages)
+            .padding(6);
+        let ext_videos = button(text("Videos").size(12))
+            .on_press(Message::FilterExtVideos)
+            .padding(6);
+        let ext_audio = button(text("Audio").size(12))
+            .on_press(Message::FilterExtAudio)
+            .padding(6);
+        let ext_code = button(text("Code").size(12))
+            .on_press(Message::FilterExtCode)
+            .padding(6);
+        let ext_archives = button(text("Archives").size(12))
+            .on_press(Message::FilterExtArchives)
+            .padding(6);
+        let ext_spreadsheets = button(text("Spreadsheets").size(12))
+            .on_press(Message::FilterExtSpreadsheets)
+            .padding(6);
+        let ext_presentations = button(text("Presentations").size(12))
+            .on_press(Message::FilterExtPresentations)
+            .padding(6);
+
+        let clear_button = button(text("Clear All Filters").size(14))
             .on_press(Message::ClearFilters)
             .padding(8)
             .width(Length::Fill);
 
-        let filter_column = column![title, Space::with_height(20), clear_button]
-            .spacing(10)
-            .padding(15)
-            .width(Length::Fixed(250.0));
+        let filter_column = column![
+            title,
+            Space::with_height(10),
+
+            modified_label,
+            modified_last_7d,
+            modified_last_30d,
+            modified_last_year,
+            Space::with_height(15),
+
+            size_label,
+            size_small,
+            size_medium,
+            size_large,
+            Space::with_height(15),
+
+            type_label,
+            type_files,
+            type_dirs,
+            Space::with_height(15),
+
+            ext_label,
+            ext_docs,
+            ext_images,
+            ext_videos,
+            ext_audio,
+            ext_code,
+            ext_archives,
+            ext_spreadsheets,
+            ext_presentations,
+            Space::with_height(20),
+
+            clear_button
+        ]
+        .spacing(5)
+        .padding(15)
+        .width(Length::Fixed(250.0));
 
         container(filter_column)
             .width(Length::Fixed(250.0))

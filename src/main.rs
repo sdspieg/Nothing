@@ -75,16 +75,23 @@ fn main() -> Result<()> {
         vec![args.drive]
     };
 
-    // Try to load cached indexes for all available drives
+    // Try to load cached indexes
     let mut index = FileIndex::new();
 
-    // Load indexes for all NTFS drives with cached indexes
-    let available_drives: Vec<char> = multi_drive::get_all_drives();
+    // Load indexes only for requested drives (respects command line argument)
+    let drives_to_load: Vec<char> = if args.gui {
+        // GUI mode: load all available drives
+        multi_drive::get_all_drives()
+    } else {
+        // CLI mode: only load the requested drive(s)
+        drives.clone()
+    };
+
     let mut loaded_count = 0;
     let mut total_files = 0;
     let mut total_dirs = 0;
 
-    for drive in &available_drives {
+    for drive in &drives_to_load {
         if let Ok(cache_path) = persistence::get_index_path(*drive) {
             if std::path::Path::new(&cache_path).exists() {
                 match persistence::load_index(&cache_path) {

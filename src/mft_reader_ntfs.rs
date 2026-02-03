@@ -118,6 +118,10 @@ impl MftReaderNtfs {
 
         println!("Pass 1: Found {} directories, resolving paths...", directories.len());
 
+        // Seed with root directory entry (MFT entry 5 is standard NTFS root)
+        let root_path: Arc<str> = format!("{}:\\", self.drive_letter).into();
+        parent_map.insert(5, Arc::clone(&root_path));
+
         // Iteratively resolve directory paths until stable
         let mut unresolved = directories.len();
         let mut iteration = 0;
@@ -135,15 +139,14 @@ impl MftReaderNtfs {
                     continue;
                 }
 
-                // Try to build path
-                let path = if dir.parent_id == 5 || dir.parent_id == 0 {
-                    // Root level
-                    format!("{}:\\{}", self.drive_letter, dir.name).into()
-                } else if let Some(parent_path) = parent_map.get(&dir.parent_id) {
+                // Try to build path using parent from map
+                let path = if let Some(parent_path) = parent_map.get(&dir.parent_id) {
                     // Parent found - build full path
                     let mut full_path = String::with_capacity(parent_path.len() + 1 + dir.name.len());
                     full_path.push_str(parent_path);
-                    full_path.push('\\');
+                    if !parent_path.ends_with('\\') {
+                        full_path.push('\\');
+                    }
                     full_path.push_str(&dir.name);
                     full_path.into()
                 } else {

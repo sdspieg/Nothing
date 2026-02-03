@@ -45,37 +45,111 @@ impl MftReader {
         let mft = Mft::new(volume);
 
         // Track parent directories to build full paths
-        // Use Arc<str> to avoid cloning large strings
         let mut parent_map: HashMap<u64, Arc<str>> = HashMap::new();
 
         // Pre-allocate index capacity (estimate ~10M files)
         index.reserve(10_000_000);
 
-        // Iterate through MFT entries
+        // TWO-PASS APPROACH to fix path resolution:
+        // Pass 1: Collect directories and build parent_map
+        // Pass 2: Process all entries with complete parent information
+
+        println!("Pass 1: Collecting directories...");
+
+        struct DirInfo {
+            fid: u64,
+            name: String,
+            parent_fid: u64,
+        }
+        let mut directories: Vec<DirInfo> = Vec::new();
+        let mut all_entries: Vec<usn_journal_rs::mft::MftEntry> = Vec::new();
+
         let mut count = 0u64;
         let progress_interval = 100_000u64;
 
+        // Collect all entries
         for entry in mft.iter() {
             count += 1;
-
-            // Show progress every 100k files (optimized check)
             if count % progress_interval == 0 {
-                println!("Progress: {} files...", count);
+                println!("Pass 1: {} entries...", count);
             }
 
-            // Process the entry
-            if let Err(e) = self.process_entry(&entry, index, &mut parent_map) {
-                // Log but don't fail on individual entry errors
-                if count < 1000 {
-                    // Only log first 1000 errors to avoid spam
-                    eprintln!("Warning: Failed to process entry {}: {}", count, e);
+            // Collect directories for path resolution
+            if entry.is_dir() {
+                let name = entry.file_name.to_string_lossy().to_string();
+                if !name.starts_with('$') && name != "." && name != ".." {
+                    directories.push(DirInfo {
+                        fid: entry.fid,
+                        name,
+                        parent_fid: entry.parent_fid,
+                    });
                 }
             }
 
-            // Periodically clean up old parent_map entries to save memory
-            // Keep only recent parents (entries processed in last 1M files)
-            if count % 1_000_000 == 0 && count > 1_000_000 {
-                self.cleanup_parent_map(&mut parent_map, &entry);
+            all_entries.push(entry);
+        }
+
+        println!("Pass 1: Found {} directories, resolving paths...", directories.len());
+
+        // Seed with root directory entry (FID 5 is standard MFT root)
+        let root_path: Arc<str> = format!("{}:\\", self.drive_letter).into();
+        parent_map.insert(5, Arc::clone(&root_path));
+
+        // Iteratively resolve directory paths
+        let mut unresolved = directories.len();
+        let mut iteration = 0;
+        const MAX_ITERATIONS: usize = 10;
+
+        while unresolved > 0 && iteration < MAX_ITERATIONS {
+            iteration += 1;
+            let prev_size = parent_map.len();
+
+            for dir in &directories {
+                if parent_map.contains_key(&dir.fid) {
+                    continue;
+                }
+
+                // Check if this is a root-level directory or has parent in map
+                let path = if let Some(parent_path) = parent_map.get(&dir.parent_fid) {
+                    let mut full_path = String::with_capacity(parent_path.len() + 1 + dir.name.len());
+                    full_path.push_str(parent_path);
+                    if !parent_path.ends_with('\\') {
+                        full_path.push('\\');
+                    }
+                    full_path.push_str(&dir.name);
+                    full_path.into()
+                } else {
+                    continue;
+                };
+
+                parent_map.insert(dir.fid, path);
+            }
+
+            let newly_resolved = parent_map.len() - prev_size;
+            unresolved = directories.len() - parent_map.len();
+            println!("Pass 1 iteration {}: resolved {} directories ({} remaining)",
+                     iteration, newly_resolved, unresolved);
+
+            if newly_resolved == 0 {
+                break;
+            }
+        }
+
+        println!("Pass 1 complete: {} directories mapped", parent_map.len());
+        println!("Pass 2: Processing all files...");
+
+        // Pass 2: Process all entries with complete parent_map
+        count = 0;
+        for entry in all_entries {
+            count += 1;
+            if count % progress_interval == 0 {
+                println!("Pass 2: {} files...", count);
+            }
+
+            if let Err(e) = self.process_entry(&entry, index, &parent_map) {
+                if count < 1000 {
+                    eprintln!("Warning: Failed to process entry {}: {}", count, e);
+                }
             }
         }
 
@@ -105,7 +179,7 @@ impl MftReader {
         &self,
         entry: &usn_journal_rs::mft::MftEntry,
         index: &mut FileIndex,
-        parent_map: &mut HashMap<u64, Arc<str>>,
+        parent_map: &HashMap<u64, Arc<str>>,
     ) -> Result<()> {
         // Get file name (convert OsString to String)
         let name = entry.file_name.to_string_lossy();
@@ -120,13 +194,8 @@ impl MftReader {
         let parent_id = entry.parent_fid;
         let is_directory = entry.is_dir();
 
-        // Build full path efficiently
+        // Build full path efficiently using complete parent_map from Pass 1
         let path = self.build_path_arc(&name, parent_id, parent_map);
-
-        // Store this entry's path for its children (using Arc, no clone!)
-        if is_directory {
-            parent_map.insert(file_id, Arc::clone(&path));
-        }
 
         // Create file entry
         // Convert Arc<str> to String (cheap if Arc has single reference)
